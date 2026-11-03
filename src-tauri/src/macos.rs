@@ -34,10 +34,7 @@ fn observe_tab_order(app: &AppHandle) {
         }
         let handle = app.clone();
         let block = block2::RcBlock::new(move |_| {
-            let _ = catch_tab_exception(|| {
-                sync_tab_order(&handle);
-                Ok(())
-            });
+            sync_tab_order(&handle);
         });
         *observer = Some(unsafe {
             NSNotificationCenter::defaultCenter().addObserverForName_object_queue_usingBlock(
@@ -196,12 +193,7 @@ fn update_project_tabs(app: &AppHandle, members: &[String], selected: &str, reor
             }
             let other: *mut objc2::runtime::AnyObject = objc2::msg_send![window, tabGroup];
             if group.is_null() || other != group {
-                native_tab_operation(
-                    &format!("addTabbedWindow anchor={anchor:p} window={window:p} members={members:?}"),
-                    || {
-                        let _: () = objc2::msg_send![anchor, addTabbedWindow: window, ordered: 1isize];
-                    },
-                )?;
+                let _: () = objc2::msg_send![anchor, addTabbedWindow: window, ordered: 1isize];
             }
         }
         let group: *mut objc2::runtime::AnyObject = objc2::msg_send![anchor, tabGroup];
@@ -229,10 +221,8 @@ fn update_project_tabs(app: &AppHandle, members: &[String], selected: &str, reor
                         })
                         .ok_or_else(|| IdeError::internal("Window missing from native tab group"))?;
                     let order = if source < index { 1isize } else { -1isize };
-                    native_tab_operation(&format!("moveTabbedWindow label={} index={index}", members[index]), || {
-                        let _: () = objc2::msg_send![group, removeWindow: window];
-                        let _: () = objc2::msg_send![current, addTabbedWindow: window, ordered: order];
-                    })?;
+                    let _: () = objc2::msg_send![group, removeWindow: window];
+                    let _: () = objc2::msg_send![current, addTabbedWindow: window, ordered: order];
                 }
             }
             if let Some(&(pointer, _)) = windows.iter().find(|(_, current)| *current) {
@@ -241,17 +231,13 @@ fn update_project_tabs(app: &AppHandle, members: &[String], selected: &str, reor
                 if group.is_null() {
                     return Err(IdeError::internal("Selected window lost its native tab group"));
                 }
-                native_tab_operation(&format!("setSelectedWindow label={selected}"), || {
-                    let _: () = objc2::msg_send![group, setSelectedWindow: window];
-                })?;
+                let _: () = objc2::msg_send![group, setSelectedWindow: window];
                 let minimized: bool = objc2::msg_send![window, isMiniaturized];
                 if minimized {
                     let _: () = objc2::msg_send![window, deminiaturize: std::ptr::null::<objc2::runtime::AnyObject>()];
                 }
-                native_tab_operation(&format!("makeKeyAndOrderFront label={selected}"), || {
-                    let _: () =
-                        objc2::msg_send![window, makeKeyAndOrderFront: std::ptr::null::<objc2::runtime::AnyObject>()];
-                })?;
+                let _: () =
+                    objc2::msg_send![window, makeKeyAndOrderFront: std::ptr::null::<objc2::runtime::AnyObject>()];
             }
         } else {
             return Err(IdeError::internal("Cannot create native window group"));
@@ -276,29 +262,13 @@ pub fn detach_project_tab(window: &WebviewWindow) -> IdeResult<()> {
     })
 }
 
-fn native_tab_operation(operation: &str, action: impl FnOnce()) -> IdeResult<()> {
-    objc2::exception::catch(std::panic::AssertUnwindSafe(action)).map_err(|exception| {
-        let message = format!("Native project tab operation failed: operation={operation}: {exception:?}");
-        tracing::error!("{message}");
-        IdeError::internal(message)
-    })
-}
-
-fn catch_tab_exception(action: impl FnOnce() -> IdeResult<()>) -> IdeResult<()> {
-    objc2::exception::catch(std::panic::AssertUnwindSafe(action)).unwrap_or_else(|exception| {
-        let message = format!("Native project tab operation failed: {exception:?}");
-        tracing::error!("{message}");
-        Err(IdeError::internal(message))
-    })
-}
-
 fn on_main_thread(app: &AppHandle, action: impl FnOnce() -> IdeResult<()> + Send + 'static) -> IdeResult<()> {
     if MainThreadMarker::new().is_some() {
-        return catch_tab_exception(action);
+        return action();
     }
     let (sender, receiver) = std::sync::mpsc::sync_channel(1);
     app.run_on_main_thread(move || {
-        let _ = sender.send(catch_tab_exception(action));
+        let _ = sender.send(action());
     })
     .map_err(|e| IdeError::internal(e.to_string()))?;
     receiver.recv().map_err(|e| IdeError::internal(e.to_string()))?
