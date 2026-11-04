@@ -1,6 +1,0 @@
-id = "asciidoc"
-name = "AsciiDoc"
-extensions = ["adoc", "asciidoc"]
-line-comment = "//"
-indent = { tab-size = 2, insert-spaces = true }
-ui-mode = "AsciiDoc"
